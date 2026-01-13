@@ -7,6 +7,9 @@
 - **Batch Layer (Spark):** Тяжелая обработка исторических данных в формате Parquet.
 - **Speed Layer (Airflow + Redis):** Оперативный расчет метрик (Revenue) "на лету".
 - **Serving Layer (FastAPI):** Единая точка доступа к данным для фронтенда.
+
+
+```mermaid
 graph TD
     subgraph "External Sources"
         Gen[Python Generator] -->|Insert| PG_SRC[(Postgres Source)]
@@ -27,10 +30,7 @@ graph TD
         CH -->|Metrics| API
         API -->|JSON| UI[Streamlit / Grafana]
     end
-
-    style Spark fill:#f9f,stroke:#333,stroke-width:2px
-    style DV fill:#bbf,stroke:#333,stroke-width:2px
-    style Lake fill:#dfd,stroke:#333,stroke-width:2px
+```
 
 ### Технологический стек:
 - **Оркестрация:** Apache Airflow
@@ -64,8 +64,12 @@ graph TD
     Real-time API: FastAPI эндпоинты для получения горячих данных из Redis.
     text
 
+### Модель данных (Data Vault 2.0)
+
+```mermaid
 erDiagram
     HUB_USERS ||--o{ LINK_ORDERS : "user_hash_key"
     HUB_PRODUCTS ||--o{ LINK_ORDERS : "product_hash_key"
     HUB_USERS ||--|| SAT_USERS : "attributes"
     LINK_ORDERS ||--|| SAT_ORDER_DETAILS : "metrics"
+```
