@@ -9,6 +9,8 @@
 - **Serving Layer (FastAPI):** Единая точка доступа к данным для фронтенда.
 
 
+### Архитектура проекта
+
 ```mermaid
 graph TD
     subgraph "External Sources"
