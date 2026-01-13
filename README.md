@@ -7,6 +7,30 @@
 - **Batch Layer (Spark):** Тяжелая обработка исторических данных в формате Parquet.
 - **Speed Layer (Airflow + Redis):** Оперативный расчет метрик (Revenue) "на лету".
 - **Serving Layer (FastAPI):** Единая точка доступа к данным для фронтенда.
+graph TD
+    subgraph "External Sources"
+        Gen[Python Generator] -->|Insert| PG_SRC[(Postgres Source)]
+    end
+
+    subgraph "Data Lake & Processing"
+        PG_SRC -->|Python ETL| Lake[(MinIO S3 Lake)]
+        Lake -->|PySpark| Spark[Apache Spark]
+        Spark -->|Aggregates| CH[(ClickHouse OLAP)]
+    end
+
+    subgraph "DWH (Data Vault 2.0)"
+        PG_SRC -->|Airflow DAG| DV[(Postgres DWH)]
+    end
+
+    subgraph "Serving Layer"
+        DV -->|History| API[FastAPI]
+        CH -->|Metrics| API
+        API -->|JSON| UI[Streamlit / Grafana]
+    end
+
+    style Spark fill:#f9f,stroke:#333,stroke-width:2px
+    style DV fill:#bbf,stroke:#333,stroke-width:2px
+    style Lake fill:#dfd,stroke:#333,stroke-width:2px
 
 ### Технологический стек:
 - **Оркестрация:** Apache Airflow
@@ -18,6 +42,11 @@
 - **Визуализация:** Grafana, Streamlit
 - **Инфраструктура:** Docker, Docker Compose
 
+## 📊 Визуализация данных (Grafana)
+На дашборде отображаются результаты работы Spark-аналитики: средний чек в зависимости от города проживания пользователя.
+
+![Grafana Dashboard](./images/grafana_dashboard.png)
+
 ## 🚀 Как запустить
 1. Клонируйте репозиторий.
 2. Создайте файл `.env` и добавьте туда `TELEGRAM_TOKEN`.
@@ -27,7 +56,7 @@
 4. Запустите генератор данных:
     python generator.py
 
-    
+
 ### 📊 Ключевые фичи
     Data Vault 2.0: Гибкая модель данных с Hubs, Links и Satellites.
     Compaction: Оптимизация хранения путем конвертации сырых JSON в сжатый Parquet через Spark.
@@ -35,31 +64,8 @@
     Real-time API: FastAPI эндпоинты для получения горячих данных из Redis.
     text
 
-
----
-
-### Шаг 4: Механика заливки на GitHub
-
-1.  Зайди на [github.com](https://github.com/), нажми **New repository**.
-2.  Назови его (например, `hybrid-data-platform-de`). Сделай его **Public**.
-3.  Не ставь галочки "Add a README" или "Add .gitignore" (мы их уже создали сами).
-4.  Открой терминал в папке с проектом и пиши:
-
-```bash
-# Инициализируем гит в папке
-git init
-
-# Добавляем все файлы (благодаря .gitignore лишнее не попадет)
-git add .
-
-# Делаем первый коммит
-git commit -m "Initial commit: Lambda Architecture DE Project"
-
-# Переименовываем ветку в main
-git branch -M main
-
-# Привязываем твой локальный проект к гитхабу (ссылку возьми со страницы репозитория)
-git remote add origin https://github.com/ТВОЙ_ЛОГИН/ТВОЙ_РЕПОЗИТОРИЙ.git
-
-# Заливаем!
-git push -u origin main
+erDiagram
+    HUB_USERS ||--o{ LINK_ORDERS : "user_hash_key"
+    HUB_PRODUCTS ||--o{ LINK_ORDERS : "product_hash_key"
+    HUB_USERS ||--|| SAT_USERS : "attributes"
+    LINK_ORDERS ||--|| SAT_ORDER_DETAILS : "metrics"
