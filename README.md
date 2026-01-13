@@ -25,12 +25,15 @@ graph TD
 
     subgraph "DWH (Data Vault 2.0)"
         PG_SRC -->|Airflow DAG| DV[(Postgres DWH)]
+        DV -->|Sync| CH
+        DV -->|Real-time| REDIS[(Redis)]
     end
 
     subgraph "Serving Layer"
         DV -->|History| API[FastAPI]
-        CH -->|Metrics| API
-        API -->|JSON| UI[Streamlit / Grafana]
+        REDIS -->|Metrics| API
+        CH -->|Dashboards| GR[Grafana]
+        API -->|JSON| UI[Streamlit]
     end
 ```
 
