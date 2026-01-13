@@ -1,0 +1,18 @@
+# Среда Python
+venv/
+__pycache__/
+*.pyc
+
+# Данные (самое важное - не заливать папки с данными БД!)
+postgres_data/
+clickhouse_data/
+redis_data/
+minio_data/
+grafana_data/
+logs/
+
+# Конфиги
+.env
+
+# Прочее
+.DS_Store   

@@ -1,0 +1,5 @@
+FROM apache/spark:3.5.0
+USER root
+# Ставим драйвер Кликхауса один раз и навсегда
+RUN pip install --no-cache-dir clickhouse-driver
+USER 1001

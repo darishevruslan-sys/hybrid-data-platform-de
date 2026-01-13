@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # 1. Postgres (OLTP Source) - Операционная база
+  postgres_source:
+    image: postgres:15
+    container_name: postgres_source
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ecom_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  # 2. ClickHouse (OLAP) - Аналитическое хранилище
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse_target
+    environment:
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=admin
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+    deploy:
+      resources:
+        limits:
+          memory: 2gb
+
+  # 3. Redis (Cache) - Горячие данные
+  redis:
+    image: redis:latest
+    container_name: redis_hot_data
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data
+
+  # 4. MinIO (S3 / Data Lake) - Твоя 4-я база для хранения файлов
+  minio:
+    image: minio/minio
+    container_name: minio-datalake
+    ports:
+      - "9000:9000"     # API
+      - "9001:9001"     # Консоль (интерфейс)
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio_data:/data
+
+  # 5. Airflow Webserver (Backend 1)
+  airflow-webserver:
+    build: .
+    container_name: airflow_webserver
+    user: root
+    command: webserver
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://user:password@postgres_source:5432/airflow_db
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=super_secret_key_123
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres_source
+
+  # 6. Airflow Scheduler (Backend 2)
+  airflow-scheduler:
+    build: .
+    container_name: airflow_scheduler
+    command: scheduler
+    user: root
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://user:password@postgres_source:5432/airflow_db
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    depends_on:
+      - postgres_source
+
+  # 7. Grafana (Frontend 1) - Визуализация
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    # ДОБАВЬ ЭТИ СТРОКИ:
+    volumes:
+      - ./grafana_data:/var/lib/grafana
+    depends_on:
+      - clickhouse
+  fastapi_app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app  # Используем новый файл
+    container_name: fastapi_backend
+    # Команда запуска стала очень простой
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/opt/app/app
+    environment:
+      - REDIS_HOST=redis_hot_data
+      - POSTGRES_HOST=postgres_source
+    depends_on:
+      - redis
+      - postgres_source
+
+  streamlit_app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app  # Используем тот же новый файл
+    container_name: streamlit_frontend
+    command: streamlit run app/ui.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./app:/opt/app/app
+    depends_on:
+      - fastapi_app
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark_master
+    user: root
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    volumes:
+      - ./app:/opt/spark/app
+      - ./minio_data:/opt/spark/minio_data
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark_worker
+    user: root
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      - spark-master
+    volumes:
+      - ./app:/opt/spark/app
+      - ./minio_data:/opt/spark/minio_data
